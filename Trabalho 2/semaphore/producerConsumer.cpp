@@ -80,68 +80,54 @@ bool isTotallyFree(vector<int> memory)
 
 bool isTotallyFull(vector<int> memory)
 {
+
     if (getFirstFreePosition(memory) == -1) {
         return true;
     }
     return false;
 }
 
-void produce()
-{
-    //Thread keeps waiting until mutex and empty are unlocked.
-    //When mutex is unlocked, lock mutex, but keep waiting until empty is unlocked.
-    //When empty is unlocked, lock empty, but keep waiting until predicate is true.
-    //If predicate is true in less than 200s, run critical section, unlock mutex, unlock full.
-    //If predicate is not true in 200s, unlock mutex, unlock empty.
-    unique_lock<mutex> lock(semaphoreMutex);
-    if(semaphoreEmpty.wait_for(lock, chrono::milliseconds(200), [] {return !isTotallyFull(sharedMemory);})){
-        int product = getRandomNumber(1, 10000000);
-        int sharedMemoryFreePosition = getFirstFreePosition(sharedMemory);
-        sharedMemory[sharedMemoryFreePosition] = product;
-        cout << "Consumer sent product: " << sharedMemory[sharedMemoryFreePosition] << endl;
-        numberOfProductsProduced += 1;
-        semaphoreFull.notify_all();
-    }
-}
-
-void consume()
-{
-    //Thread keeps waiting until mutex and full are unlocked.
-    //When mutex is unlocked, lock mutex, but keep waiting until full is unlocked.
-    //When full is unlocked, lock full, but keep waiting until predicate is true.
-    //If predicate is true in less than 200s, run critical section, unlock mutex, unlock empty.
-    //If predicate is not true in 200s, unlock mutex, unlock full.
-    unique_lock<mutex> lock(semaphoreMutex);
-    if(semaphoreFull.wait_for(lock, chrono::milliseconds(200), [] {return !isTotallyFree(sharedMemory);})){
-        int sharedMemoryFullPosition = getFirstFullPosition(sharedMemory);
-        cout << "Consumer received product: " << sharedMemory[sharedMemoryFullPosition] << endl;
-        int isPrimeNumber = isPrime(sharedMemory[sharedMemoryFullPosition]);
-        if (isPrimeNumber) {
-            cout << "Number "<< sharedMemory[sharedMemoryFullPosition] << " is prime"<< endl;
-        } else {
-            cout << "Number "<< sharedMemory[sharedMemoryFullPosition] << " is not prime"<< endl;
-        }
-        int consumerLocalMemoryFreePosition = getFirstFreePosition(consumerLocalMemory);
-        consumerLocalMemory[consumerLocalMemoryFreePosition] = sharedMemory[sharedMemoryFullPosition];
-        sharedMemory[sharedMemoryFullPosition] = 0;
-        numberOfProductsConsumed += 1;
-        semaphoreEmpty.notify_all();
-    }
-}
-
-// Only produce if number of produced products is < 10000
 void producer()
 {
-    while (numberOfProductsProduced < numberOfProducts) {
-        produce();
+    while(numberOfProductsProduced <= numberOfProducts) {
+        int producerProduct = getRandomNumber(1, 10000000);
+        unique_lock<mutex> lock(semaphoreMutex);
+        //When thread is ready, check if predicate is true;
+        //If not, go to the list of waiting threads and will be ready again when notify_all() or notify_one() is called to empty semaphores or when the time expires.
+        //When predicate is true, locks mutex, run critical section, wakes up full semaphores and unlocks mutex.
+        if(semaphoreEmpty.wait_for(lock, chrono::milliseconds(200), [] {return !isTotallyFull(sharedMemory);})){
+            //checks again because condition might not be true anymore
+            if (numberOfProductsProduced <= numberOfProducts) {
+                int sharedMemoryFreePosition = getFirstFreePosition(sharedMemory);
+                sharedMemory[sharedMemoryFreePosition] = producerProduct;
+                numberOfProductsProduced += 1;
+                semaphoreFull.notify_all();
+            }
+        }
     }
 }
 
-// Only consume if number of consumed products is < 10000
 void consumer()
 {
-    while (numberOfProductsConsumed < numberOfProducts) {
-        consume();
+    while (numberOfProductsConsumed <= numberOfProducts) {
+        int consumerProduct;
+        unique_lock<mutex> lock(semaphoreMutex);
+        //When thread is ready, check if predicate is true;
+        //If not, go to the list of waiting threads and will be ready again when notify_all() or notify_one() is called to full semaphores or when the time expires.
+        //When predicate is true, locks mutex, run critical section, wakes up empty semaphores and unlocks mutex.
+        if(semaphoreFull.wait_for(lock, chrono::milliseconds(200), [] {return !isTotallyFree(sharedMemory);})){
+            //checks again because condition might not be true anymore
+            if (numberOfProductsConsumed <= numberOfProducts) {
+                int sharedMemoryFullPosition = getFirstFullPosition(sharedMemory);
+                int consumerLocalMemoryFreePosition = getFirstFreePosition(consumerLocalMemory);
+                consumerProduct = sharedMemory[sharedMemoryFullPosition];
+                consumerLocalMemory[consumerLocalMemoryFreePosition] = consumerProduct;
+                sharedMemory[sharedMemoryFullPosition] = 0;
+                numberOfProductsConsumed += 1;
+                semaphoreEmpty.notify_all();
+            }
+        }
+        int isPrimeNumber = isPrime(consumerProduct);
     }
 }
 
@@ -156,10 +142,6 @@ int main(int argc, char* argv[])
     int totalNumberOfThreads = numberOfProducerThreads + numberOfConsumerThreads;
 
     thread allThreads[totalNumberOfThreads];
-
-    //Starts counting time
-    chrono::time_point<std::chrono::system_clock> start, end;
-    start = chrono::system_clock::now();
 
     //Sets all sharedMemory N elements to zero because it should be totally emtpy in the begining.
     for (int i = 0; i < sharedMemory.size(); ++i)
@@ -179,16 +161,20 @@ int main(int argc, char* argv[])
         allThreads[i] = thread(consumer);
     }
 
+    //Starts counting total time (threads join and execute)
+    chrono::time_point<std::chrono::system_clock> start, end;
+    start = chrono::system_clock::now();
+
     //Join all threads to main thread
     for (int i = 0; i < totalNumberOfThreads; ++i)
     {
         allThreads[i].join();
     }
 
-    //Ends counting time
+    //Ends counting total time (threads join and execute)
     end = chrono::system_clock::now();
     long totalTime = std::chrono::duration_cast<std::chrono::milliseconds> (end - start).count();
-    cout << "Total time is: " << totalTime << endl;
+    cout << totalTime << endl;
 
     return EXIT_SUCCESS;
 }
