@@ -1,0 +1,110 @@
+#include <stdlib.h>
+#include <math.h>
+#include <iostream>
+#include <pthread.h>
+#include <vector>
+#include <atomic>
+#include <chrono>
+
+using namespace std;
+
+
+long int N;                     //numero de valores (10⁷, 10⁸, 10⁹)
+int K;                          //número de threads (1, 2, 4, 8, 16, 32, 64, 128, 256)
+vector<char> valores;           //vetor que guardará os valores [-100,100] ǵerados aleatoriamente
+int parcela;                    //numero de parcelas do vetor
+long int soma = 0;
+
+class Spinlock
+{
+    std::atomic_flag locked = ATOMIC_FLAG_INIT;
+public:
+    void aquire()
+    {
+        while(locked.test_and_set()){}
+    }
+    void release()
+    {
+        locked.clear();
+    }
+};
+
+Spinlock slock;
+
+void *new_thread(void *arg){
+    //função executada assim que uma thread é criada
+    cout << "Thread created." << endl;
+    
+    long t_id = (long)arg;
+    int soma_parcela = 0;
+    int init = parcela*t_id;
+    for (long int i=0; i < parcela; i++){
+        if ((i+init) >= N){
+            break;
+        }
+        soma_parcela += valores[i+init];
+    }   
+
+    slock.aquire();
+    soma += soma_parcela;
+    slock.release();
+    
+    pthread_exit(NULL);
+}
+
+//passagem de argumentos por linha de comando, sendo K=numero de threads e N=expoente utilizado
+int main(int argc, char** argv){
+    
+    chrono::time_point<std::chrono::system_clock> t_inicio, t_fim;
+
+    if (argc!= 3){
+        cout << "Número incorreto de argumentos" << endl;
+        return 0;
+    }
+        
+    srand(time(NULL));
+    
+    K = atoi(argv[1]);  //K = numero de threads
+    N = pow(10, atoi(argv[2]));  //N = quantidade de numeros gerados
+    
+    //redimensiona valores para N
+    valores.resize(1*N);
+    //cout <<  valores.size() << endl;
+    
+    //popula valores
+    for (long int i = 0; i < N; i++){
+        valores[i] = char(rand()%201 - 100);
+    }
+    
+    //início do trabalho das threads 
+    t_inicio = chrono::system_clock::now();         //primeira medição de tempo 
+    parcela = trunc(N/K);
+    float resto = N % K;
+    if (resto != 0){
+        parcela += 1;
+    }
+    
+    pthread_t threads[K];   //array que contém as threads criadas
+    
+    for(long i=0; i<K; i++)
+    {
+        int success = pthread_create(&threads[i],NULL,&new_thread, (void *)i);
+        if(success != 0){
+            std::cout << "Failed to create thread." << std::endl;
+        }
+    }
+        
+    //espera o fim da execução das outras threads
+    for (int i = 0; i < K; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    t_fim = chrono::system_clock::now();            //medição final
+    
+    cout << "Soma Total: " << soma << endl;
+    long elaps_time = std::chrono::duration_cast<std::chrono::milliseconds> (t_fim - t_inicio).count();
+    cout << "Tempo de Processamento= " << elaps_time << "mS" << endl;
+    
+    return 0;
+}
