@@ -75,9 +75,7 @@ int main(int argc, char** argv){
     for (long int i = 0; i < N; i++){
         valores[i] = char(rand()%201 - 100);
     }
-    
-    //início do trabalho das threads 
-    t_inicio = chrono::system_clock::now();         //primeira medição de tempo 
+     
     parcela = trunc(N/K);
     float resto = N % K;
     if (resto != 0){
@@ -85,6 +83,9 @@ int main(int argc, char** argv){
     }
     
     pthread_t threads[K];   //array que contém as threads criadas
+    
+    //início da criação das threads
+    t_inicio = chrono::system_clock::now();         //primeira medição de tempo
     
     for(long i=0; i<K; i++)
     {
