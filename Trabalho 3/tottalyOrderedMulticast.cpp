@@ -15,12 +15,13 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <arpa/inet.h>
 using namespace std;
 
 
 typedef unsigned int LamportTime;
 bool seeded = false;
+int sersockfd, serauxsocketfd;
+int clisockfd;
 
 class Lock
 {
@@ -97,10 +98,93 @@ std::string getRandomLineInFile(std::string filePath, int numberOfLines)
     return line;
 }
 
-// Generate local events, add them to local time and send messages.
-void localEventsManager(string processId, int eventsPerSecond, int maxNumberOfEvents)
+void createServerSockets(int portno)
 {
-    int totalNumberOfEvents = 0;
+    socklen_t clientSize;
+    struct sockaddr_in serverAddr, clientAddr;
+
+    //Open socket
+    sersockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sersockfd < 0) {
+        cout << "Error opening socket" << endl;
+        exit(0);
+    }
+    bzero((char *) &serverAddr, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(portno);
+
+    //Bind socket
+    if (::bind(sersockfd, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) < 0) {
+        cout << "Error binding socket" << endl;
+        exit(0);
+    }
+
+    //Listen to socket
+    listen(sersockfd, 5);
+    clientSize = sizeof(clientAddr);
+
+    //Accept socket
+    serauxsocketfd = accept(sersockfd, (struct sockaddr *) &clientAddr, &clientSize);
+    if (serauxsocketfd < 0) {
+        cout << "Error accepting socket" << endl;
+        exit(0);
+    }
+}
+
+void createClientSockets(string processIp, int portno)
+{
+    struct sockaddr_in serverAddr;
+
+    struct hostent *server;
+    server = gethostbyname(processIp.c_str());
+
+    //Open socket
+    clisockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (clisockfd < 0) {
+        cout << "Error opening socket" << endl;
+        exit(0);
+    }
+    bzero((char *) &serverAddr, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, (char *)&serverAddr.sin_addr.s_addr, server->h_length);
+    serverAddr.sin_port = htons(portno);
+
+    //Connect socket
+    if (connect(clisockfd,(struct sockaddr *) &serverAddr,sizeof(serverAddr)) < 0) {
+        cout << "Error connecting socket" << endl;
+        exit(0);
+    }
+}
+
+void closeSocket(int socket)
+{
+    close(socket);
+}
+
+// Generate local events, add them to local time and send messages.
+void localEventsManager(int processId, string processIp, int portno, int eventsPerSecond, int maxNumberOfEvents)
+{
+    char charMessageReceived[2];
+    string line = getRandomLineInFile("phrases.txt", 100);
+    createClientSockets(processIp, portno);
+    //write in socket
+    cout << "Client is about to send to server: " << line << endl;
+    if (write(clisockfd, line.c_str(), 100) < 0) {
+        cout << "Error writing to socket" << endl;
+        exit(0);
+    }
+    slock.aquire();
+    lamport.localEvent();
+    cout << lamport.getTime() << endl;
+    slock.release();
+    //Read from socket
+    if (read(clisockfd, charMessageReceived, 2) < 0) {
+        cout << "Error reading from socket" << endl;
+        exit(0);
+    }
+    cout << "Client received from server: " << charMessageReceived << endl;
+/*    int totalNumberOfEvents = 0;
     while(totalNumberOfEvents < maxNumberOfEvents) {
         for (int i = 0; i < eventsPerSecond; ++i)
         {
@@ -112,188 +196,57 @@ void localEventsManager(string processId, int eventsPerSecond, int maxNumberOfEv
         }
         sleep(1);
         totalNumberOfEvents += eventsPerSecond;
-    }
+    }*/
+    closeSocket(clisockfd);
 }
 
 //Receive messages, add external events to local time and execute a proccess if messages from all processes were received and event is the first of local line.
-void externalEventsManager(string processId)
+void externalEventsManager(int processId, int portno)
 {
-}
+    char charMessageReceived[100];
 
-int getFileNumberOfLines(std::string filePath)
-{
-    std::ifstream file(filePath);
-    std::string line;
+    createServerSockets(portno);
 
-    int numberOfLines = 0;
-    while (std::getline(file,line)) {
-        numberOfLines++;
-    }
-
-    return numberOfLines;
-}
-
-vector<string> explodeFileLine(const string& s, const char& c)
-{
-    string buff;
-    vector<string> v;
-
-    for(auto n:s) {
-        if(n != c) {
-            buff+=n;
-        } else if(n == c && buff != "") {
-            v.push_back(buff);
-            buff = "";
-        }
-    }
-    if(buff != "") {
-        v.push_back(buff);
-    }
-
-    return v;
-}
-
-vector<vector<string>> getProcessesArray(string processesFileName)
-{
-    int numberOfLines = getFileNumberOfLines(processesFileName);
-
-    ifstream processesFile(processesFileName);
-    string line;
-
-    int i = 0;
-    vector<vector<string>> processesArray(numberOfLines, vector<string> (2));
-    for (unsigned int i = 0; i < numberOfLines; ++i)
-    {
-        getline(processesFile,line);
-        vector<string> info = explodeFileLine(line, ' ');
-
-        processesArray[i][0] = info[0];
-        processesArray[i][1] = info[1];
-    }
-    processesFile.close();
-    return processesArray;
-}
-
-void createClientSockets()
-{
-    int sockfd, auxsocketfd, portno;
-    socklen_t clientSize;
-    struct sockaddr_in serverAddr, clientAddr;
-
-    portno = 3000;
-
-    //Open socket
-    sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sockfd < 0) {
-        cout << "Error opening socket" << endl;
-        exit(0);
-    }
-    bzero((char *) &serverAddr, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(portno);
-
-    //Bind socket
-    if (::bind(sockfd, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) < 0) {
-        cout << "Error binding socket" << endl;
-        exit(0);
-    }
-
-    //Listen to socket
-    listen(sockfd, 5);
-    clientSize = sizeof(clientAddr);
-
-    //Accept socket
-    auxsocketfd = accept(sockfd, (struct sockaddr *) &clientAddr, &clientSize);
-    if (auxsocketfd < 0) {
-        cout << "Error accepting socket" << endl;
-        exit(0);
-    }
-}
-
-void createServerSockets(vector<vector<string>> &processesArray, string localIdNumber)
-{
-    int sockfd;
-    struct sockaddr_in serverAddr;
-
-    for (int i = 0; i < sizeof(processesArray); ++i)
-    {
-        string processIp = processesArray[i][0];
-        string processId = processesArray[i][1];
-
-        const char *ipstr = processIp.c_str();
-        struct in_addr *ip;
-        struct hostent *server;
-
-        if (!inet_aton(ipstr, ip)) {
-            cout << "Can't parse IP address" << endl;
+    while (1) {
+        //Read from socket
+        if (read(serauxsocketfd, charMessageReceived, 100) < 0) {
+            cout << "Error reading from socket" << endl;
             exit(0);
         }
+        cout << "Server received from client: " << charMessageReceived << endl;
 
-        if ((server = gethostbyaddr((const void *)&ip, sizeof ip, AF_INET)) == NULL) {
-            cout << "No such host" << endl;
+        //Write to socket
+        string stringMessageSent = "OK";
+        cout << "Server is about to send to client: " << stringMessageSent << endl;
+        if (write(serauxsocketfd, stringMessageSent.c_str(), 2) < 0) {
+            cout << "Error writing to socket" << endl;
             exit(0);
         }
-
-        if (localIdNumber != processId) {
-            int portno = 3000;
-
-            //Open socket
-            sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (sockfd < 0) {
-                cout << "Error opening socket" << endl;
-                exit(0);
-            }
-            bzero((char *) &serverAddr, sizeof(serverAddr));
-            serverAddr.sin_family = AF_INET;
-            bcopy((char *)server->h_addr, (char *)&serverAddr.sin_addr.s_addr, server->h_length);
-            serverAddr.sin_port = htons(portno);
-
-            //Connect socket
-            if (connect(sockfd,(struct sockaddr *) &serverAddr,sizeof(serverAddr)) < 0) {
-                cout << "Error connecting socket" << endl;
-            }
-        }
     }
+
+    closeSocket(serauxsocketfd);
+    closeSocket(sersockfd);
 }
+
 
 int main(int argc, char* argv[])
 {
-    string processesFileName = argv[1];
-    string localIpNumber = argv[2];
+    int processId = atoi(argv[1]);
+    string processIp = argv[2];
+    int portno = 8084;
     int lambda = atoi(argv[3]);
     int k = atoi(argv[4]);
 
-    //Transform what's in .txt into array
-    vector<vector<string>> processesArray = getProcessesArray(processesFileName);
+    cout << "--------" endl;
+    cout << "Running process number " << processId << endl;
 
-    //Generate all processes
-    for(int i = 0; i < sizeof(processesArray); ++i)
-    {
-        string processIp = processesArray[i][0];
-        string processId = processesArray[i][1];
-        if (processIp == localIpNumber) {
-            int forkStatus = fork();
-            if (forkStatus == -1) {
-                cout << "Error forking" << endl;
-                return EXIT_FAILURE;
-            }
-            if (forkStatus == 0) { //Child process
-                //Create sockets - REVIEW
-                createServerSockets(processesArray, processId);
-                createClientSockets();
+    //Create threads
+    thread firstThread(localEventsManager, processId, processIp, portno, lambda, k);
+    thread secondThread(externalEventsManager, processId, portno);
 
-                //Create threads
-                thread firstThread(localEventsManager, processId, lambda, k);
-                thread secondThread(externalEventsManager, processId);
-
-                //synchronize threads
-                firstThread.join();
-                secondThread.join();
-                exit(0);
-            }
-        }
-    }
+    //synchronize threads
+    firstThread.join();
+    secondThread.join();
 
     return EXIT_SUCCESS;
 }
