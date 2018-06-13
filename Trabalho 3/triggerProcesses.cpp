@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <netinet/in.h>
+#include <utility>
 using namespace std;
 
 int getFileNumberOfLines(string filePath)
@@ -24,27 +25,20 @@ int getFileNumberOfLines(string filePath)
     return numberOfLines;
 }
 
-vector<string> explodeFileLine(const string& s, const char& c)
+vector<string> explode(string const & s, char delim)
 {
-    string buff;
-    vector<string> v;
+    vector<string> result;
+    istringstream iss(s);
 
-    for(auto n:s) {
-        if(n != c) {
-            buff+=n;
-        } else if(n == c && buff != "") {
-            v.push_back(buff);
-            buff = "";
-        }
-    }
-    if(buff != "") {
-        v.push_back(buff);
+    for (string token; getline(iss, token, delim); )
+    {
+        result.push_back(move(token));
     }
 
-    return v;
+    return result;
 }
 
-vector<vector<string>> getProcessesArray(string processesFileName)
+vector<vector<string> > getProcessesArray(string processesFileName)
 {
     int numberOfLines = getFileNumberOfLines(processesFileName);
 
@@ -52,14 +46,15 @@ vector<vector<string>> getProcessesArray(string processesFileName)
     string line;
 
     int i = 0;
-    vector<vector<string>> processesArray(numberOfLines, vector<string> (2));
-    for (unsigned int i = 0; i < numberOfLines; ++i)
+    vector<vector<string> > processesArray(numberOfLines, vector<string> (3));
+    for (int i = 0; i < numberOfLines; ++i)
     {
         getline(processesFile,line);
-        vector<string> info = explodeFileLine(line, ' ');
+        vector<string> info = explode(line, ' ');
 
         processesArray[i][0] = info[0];
         processesArray[i][1] = info[1];
+        processesArray[i][2] = info[2];
     }
     processesFile.close();
     return processesArray;
@@ -73,16 +68,18 @@ int main(int argc, char* argv[])
     string k = argv[4];
 
     //Transform what's in .txt into an array
-    vector<vector<string>> processesArray = getProcessesArray(processesFileName);
+    vector<vector<string> > processesArray = getProcessesArray(processesFileName);
 
     //Generate all processes
     for(int i = 0; i < sizeof(processesArray); ++i)
     {
         string processIp = processesArray[i][0];
         string processId = processesArray[i][1];
+        string processPort = processesArray[i][2];
+
         if (processIp == localIpNumber) {
             string cmd("./tottalyOrderedMulticast ");
-            cmd += processId + " " + processIp + " " + lambda + " " + k;
+            cmd += processesFileName + " " + processId + " " + processIp + " " + processPort + " " + lambda + " " + k;
             cout << "About to run command: " << cmd << endl;
             system(cmd.c_str());
         }

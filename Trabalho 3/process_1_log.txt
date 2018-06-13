@@ -1,0 +1,10 @@
+Process 1 log file
+
+EV_1_1_A diferença entre ganhar e perder é muitas vezes...não desistir.1
+EV_2_1_A diferença entre ganhar e perder é muitas vezes...não desistir.2
+EV_1_2_Quando não se tem mais nada a perder, só se tem a ganhar.1
+EV_2_2_Quando não se tem mais nada a perder, só se tem a ganhar.2
+EV_1_7_Só há uma maneira de lutar contra o poder: é sobreviver-lhe.1
+EV_2_7_Só há uma maneira de lutar contra o poder: é sobreviver-lhe.2
+EV_1_8_É melhor conquistar a si mesmo do que vencer mil batalhas.1
+EV_2_8_É melhor conquistar a si mesmo do que vencer mil batalhas.2
