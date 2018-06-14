@@ -1,2 +1,14 @@
 Process 2 log file
 
+EV_1_1_O importante não é vencer todos os dias, mas lutar sempre.1
+EV_2_1_O importante não é vencer todos os dias, mas lutar sempre.2
+EV_1_2_A avareza perde tudo ao pretender ganhar tudo.1
+EV_2_2_A avareza perde tudo ao pretender ganhar tudo.2
+EV_1_7_A maior caridade é habilitar o pobre a ganhar a sua vida.1
+EV_1_10_Só se pode vencer a natureza obedecendo-lhe.1
+EV_2_12_A maior caridade é habilitar o pobre a ganhar a sua vida.2
+EV_2_13_Só se pode vencer a natureza obedecendo-lhe.2
+EV_1_15_É mais fácil vencer um mau hábito hoje do que amanhã.1
+EV_1_18_Aquele que quer morrer ou vencer raramente é vencido.1
+EV_2_20_É mais fácil vencer um mau hábito hoje do que amanhã.2
+EV_2_23_Aquele que quer morrer ou vencer raramente é vencido.2

@@ -471,11 +471,6 @@ void writePhraseInLog(string processId, int totalNumberOfprocesses)
     logFile.close();
 }
 
-void createProcessServerSocket(int portno)
-{
-    createServerSocket(portno);
-}
-
 int main(int argc, char* argv[])
 {
     string processesFileName = argv[1];
@@ -485,14 +480,13 @@ int main(int argc, char* argv[])
     int lambda = atoi(argv[5]);
     int k = atoi(argv[6]);
     int totalNumberOfprocesses = getFileNumberOfLines(processesFileName);
+    int totalNumberOfEventsPerProcess = int(k/totalNumberOfprocesses);
 
     cout << "--------" << endl;
     cout << "Running process number " << processId << " with IP "<< processIp << " receiving messages on port " << portno<< endl;
 
     if (processId != "1") {
-        thread threadZero(createProcessServerSocket, portno);
-        //Synchronize threads
-        threadZero.join();
+        createServerSocket(portno);
     }
 
     vector<vector<string>> otherProcessesArray = getProcessesArray(processesFileName);
@@ -508,7 +502,7 @@ int main(int argc, char* argv[])
     }
 
     //Create threads
-    thread firstThread(localEventsManager, processesFileName, processId, lambda, k);
+    thread firstThread(localEventsManager, processesFileName, processId, lambda, totalNumberOfEventsPerProcess);
     thread secondThread(externalEventsManager, processId);
     thread thirdThread(writePhraseInLog, processId, totalNumberOfprocesses);
 
