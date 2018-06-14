@@ -21,7 +21,7 @@ using namespace std;
 typedef unsigned int LamportTime;
 bool seeded = false;
 int sersockfd, serauxsocketfd;
-int clisockfd;
+vector <int> clientSockets;
 vector<string> eventsWaitLine;
 vector<int> eventsWaitLineOKReceived;
 
@@ -157,7 +157,7 @@ void createClientSocket(string serverProcessIp, int serverPortno)
     server = gethostbyname(serverProcessIp.c_str());
 
     //Open socket
-    clisockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int clisockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (clisockfd < 0) {
         cout << "Error opening socket" << endl;
         exit(0);
@@ -172,21 +172,23 @@ void createClientSocket(string serverProcessIp, int serverPortno)
         cout << "Error connecting socket" << endl;
         exit(0);
     }
+
+    clientSockets.push_back(clisockfd);
 }
 
-void clientWrite(string processId, string message)
+void clientWrite(int clientSocket, string processId, string message)
 {
     cout << "Client " << processId << " is about to send to server: " << message << endl;
-    if (write(clisockfd, message.c_str(), 100) < 0) {
+    if (write(clientSocket, message.c_str(), 100) < 0) {
         cout << "Error writing to socket" << endl;
         exit(0);
     }
 }
 
-string clientRead(string processId)
+string clientRead(int clientSocket, string processId)
 {
     char charMessageReceived[100];
-    if (read(clisockfd, charMessageReceived, 100) < 0) {
+    if (read(clientSocket, charMessageReceived, 100) < 0) {
         cout << "Error reading from socket" << endl;
         exit(0);
     }
@@ -194,24 +196,36 @@ string clientRead(string processId)
     return charMessageReceived;
 }
 
-void writeInSocket(string processType, string processId, string message)
+void writeInSockets(string processId, string message)
 {
-    if (processType == "server") {
+    if (processId != "1") {
         serverWrite(processId, message);
-    } else if (processType == "client") {
-        clientWrite(processId, message);
+    }
+
+    int numberOfClientSockets = clientSockets.size();
+    for (int i = 0; i < numberOfClientSockets; ++i)
+    {
+        clientWrite(clientSockets[i], processId, message);
     }
 }
 
-string readFromSocket(string processType, string processId)
+vector<string> readFromSockets(string processId)
 {
-    string messageReceived;
-    if (processType == "server") {
-        messageReceived = serverRead(processId);
-    } else if (processType == "client") {
-        messageReceived = clientRead(processId);
+    vector<string> messagesReceived;
+
+    if (processId != "1") {
+        string serverMessageReceived = serverRead(processId);
+        messagesReceived.push_back(serverMessageReceived);
     }
-    return messageReceived;
+
+    int numberOfClientSockets = clientSockets.size();
+    for (int i = 0; i < numberOfClientSockets; ++i)
+    {
+        string clientMessageReceived = clientRead(clientSockets[i], processId);
+        messagesReceived.push_back(clientMessageReceived);
+    }
+
+    return messagesReceived;
 }
 
 void closeSocket(int socket)
@@ -368,7 +382,7 @@ void addOKInEvent(string event)
 }
 
 // Generate local events, add them to local wait line and send messages.
-void localEventsManager(string processesFileName, string processId, string processType, int eventsPerSecond, int maxNumberOfEvents)
+void localEventsManager(string processesFileName, string processId, int eventsPerSecond, int maxNumberOfEvents)
 {
     int totalNumberOfEvents = 0;
     while(totalNumberOfEvents < maxNumberOfEvents) {
@@ -384,7 +398,7 @@ void localEventsManager(string processesFileName, string processId, string proce
             string messageSent = "EV_" + processId + "_" + to_string(lamport.getTime()) + "_" + phraseSent;
             addEventInWaitLine(messageSent);
 
-            writeInSocket(processType, processId, messageSent);
+            writeInSockets(processId, messageSent);
             slock.release();
         }
         sleep(1);
@@ -393,32 +407,37 @@ void localEventsManager(string processesFileName, string processId, string proce
 }
 
 //Receive messages, add external events to local wait line and send OK message.
-void externalEventsManager(string processId, string processType)
+void externalEventsManager(string processId)
 {
     while (1) {
-        string messageReceived = readFromSocket(processType, processId);
+        vector<string> messagesReceived = readFromSockets(processId);
 
-        vector<string> messageReceivedSplited = explode(messageReceived, '_');
-        string messageReceivedType = messageReceivedSplited[0];
-        string processIdReceived = messageReceivedSplited[1];
-        LamportTime LamportTimeReceived = stoi(messageReceivedSplited[2]);
-        string phraseReceived = messageReceivedSplited[3];
+        int numberOfMessagesReceived = messagesReceived.size();
+        for (int i = 0; i < numberOfMessagesReceived; ++i)
+        {
+            string messageReceived = messagesReceived[i];
+            vector<string> messageReceivedSplited = explode(messageReceived, '_');
+            string messageReceivedType = messageReceivedSplited[0];
+            string processIdReceived = messageReceivedSplited[1];
+            LamportTime LamportTimeReceived = stoi(messageReceivedSplited[2]);
+            string phraseReceived = messageReceivedSplited[3];
 
-        slock.aquire();
-        lamport.receiveEvent(LamportTimeReceived);
-        cout << "Lamport time after receive from process " << processIdReceived << " with lamport time = " << LamportTimeReceived << " is: " << to_string(lamport.getTime()) << endl;
+            slock.aquire();
+            lamport.receiveEvent(LamportTimeReceived);
+            cout << "Lamport time after receive from process " << processIdReceived << " with lamport time = " << LamportTimeReceived << " is: " << to_string(lamport.getTime()) << endl;
 
-        if (messageReceivedType == "EV") {
-            addEventInWaitLine(messageReceived);
-            string messageSent = "OK_" + processId + "_" + to_string(lamport.getTime()) + "_" + phraseReceived;
-            writeInSocket(processType, processId, messageSent);
-            //Send confirmation to itself
-            addOKInEvent(messageSent);
+            if (messageReceivedType == "EV") {
+                addEventInWaitLine(messageReceived);
+                string messageSent = "OK_" + processId + "_" + to_string(lamport.getTime()) + "_" + phraseReceived;
+                writeInSockets(processId, messageSent);
+                //Send confirmation to itself
+                addOKInEvent(messageSent);
+            }
+            if (messageReceivedType == "OK") {
+                addOKInEvent(messageReceived);
+            }
+            slock.release();
         }
-        if (messageReceivedType == "OK") {
-            addOKInEvent(messageReceived);
-        }
-        slock.release();
     }
 }
 
@@ -452,40 +471,45 @@ void writePhraseInLog(string processId, int totalNumberOfprocesses)
     logFile.close();
 }
 
+void createProcessServerSocket(int portno)
+{
+    createServerSocket(portno);
+}
+
 int main(int argc, char* argv[])
 {
     string processesFileName = argv[1];
     string processId = argv[2];
     string processIp = argv[3];
-    string processType = argv[4];
-    int portno = atoi(argv[5]);
-    int lambda = atoi(argv[6]);
-    int k = atoi(argv[7]);
+    int portno = atoi(argv[4]);
+    int lambda = atoi(argv[5]);
+    int k = atoi(argv[6]);
     int totalNumberOfprocesses = getFileNumberOfLines(processesFileName);
 
     cout << "--------" << endl;
     cout << "Running process number " << processId << " with IP "<< processIp << " receiving messages on port " << portno<< endl;
 
-    //Create sockets
-    if (processType == "server") {
-        createServerSocket(portno);
-    } else if (processType == "client") {
-        vector<vector<string>> otherProcessesArray = getProcessesArray(processesFileName);
-        for(int i = 0; i < totalNumberOfprocesses; ++i)
-        {
-            string otherProcessIp = otherProcessesArray[i][0];
-            string otherProcessId = otherProcessesArray[i][1];
-            int otherProcessPort = stoi(otherProcessesArray[i][2]);
+    if (processId != "1") {
+        thread threadZero(createProcessServerSocket, portno);
+        //Synchronize threads
+        threadZero.join();
+    }
 
-            if (processId != otherProcessId) {
-                createClientSocket(otherProcessIp, otherProcessPort);
-            }
+    vector<vector<string>> otherProcessesArray = getProcessesArray(processesFileName);
+    for(int i = 0; i < totalNumberOfprocesses; ++i)
+    {
+        string otherProcessIp = otherProcessesArray[i][0];
+        string otherProcessId = otherProcessesArray[i][1];
+        int otherProcessPort = stoi(otherProcessesArray[i][2]);
+
+        if (processId < otherProcessId) {
+            createClientSocket(otherProcessIp, otherProcessPort);
         }
     }
 
     //Create threads
-    thread firstThread(localEventsManager, processesFileName, processId, processType, lambda, k);
-    thread secondThread(externalEventsManager, processId, processType);
+    thread firstThread(localEventsManager, processesFileName, processId, lambda, k);
+    thread secondThread(externalEventsManager, processId);
     thread thirdThread(writePhraseInLog, processId, totalNumberOfprocesses);
 
     //Synchronize threads
@@ -494,7 +518,11 @@ int main(int argc, char* argv[])
     thirdThread.join();
 
     //Close sockets
-    closeSocket(clisockfd);
+    int numberOfClientSockets = clientSockets.size();
+    for (int i = 0; i < numberOfClientSockets; ++i)
+    {
+        closeSocket(clientSockets[i]);
+    }
     closeSocket(serauxsocketfd);
     closeSocket(sersockfd);
 
